@@ -16,4 +16,4 @@ This repository is a Mini Project for the **IoT Module course**.
 ## 📖 Table of Contents
 
 ### Embedded Hardware
-- **[ESP32](Embedded%20ESP32/Conveyor-system)**
+- **[ESP32](ESP32/Conveyor-system)**
