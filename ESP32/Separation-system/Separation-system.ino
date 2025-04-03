@@ -1,186 +1,160 @@
-#include <ESP32Servo.h>
 #include <WiFi.h>
 #include <PubSubClient.h>
+#include <SPI.h>
+#include <TFT_eSPI.h>
+#include <ESP32Servo.h>
 
-// กำหนดขาพินต่างๆ
-#define GREEN_SERVO_PIN 13  
-#define RED_SERVO_PIN 5     
-#define PUSH_GREEN_SERVO_PIN 23
-#define PUSH_RED_SERVO_PIN 19
-#define IR_GREEN_PIN 26
-#define IR_RED_PIN 25
-
-Servo greenServo, redServo, pushGreenServo, pushRedServo;
-
-int lastIrGreen = -1;
-int lastIrRed = -1;
-unsigned long lastDebounceTimeGreen = 0;
-unsigned long lastDebounceTimeRed = 0;
-const unsigned long debounceDelay = 100;
-
-// ตั้งค่าการเชื่อมต่อ Wi-Fi และ MQTT
-const char* ssid = "Yindee";
-const char* password = "phoorin3799";
-const char* mqtt_server = "172.20.10.3";  // IP ของ MQTT Broker
+const char* ssid = "";  
+const char* password = "";  
+const char* mqtt_server = "172.20.10.3";  
 const int mqtt_port = 1883;
-const char* mqtt_topic = "esp32/color";  // Topic สำหรับรับคำสั่ง
+const char* mqtt_topic = "esp32/robot";  
 
 WiFiClient espClient;
 PubSubClient client(espClient);
 
-bool connectedOnce = false;  // ตัวแปรเพื่อตรวจสอบการเชื่อมต่อครั้งแรก
-bool wifiConnectedOnce = false;  // ตัวแปรเพื่อตรวจสอบการเชื่อมต่อ Wi-Fi ครั้งแรก
+#define BASE_SERVO_PIN 25  
+#define RIGHT_ARM_SERVO_PIN 17  
+#define CLAW_SERVO_PIN 27  
 
-void setup() {
-    Serial.begin(115200);
-    greenServo.attach(GREEN_SERVO_PIN);
-    redServo.attach(RED_SERVO_PIN);
-    pushGreenServo.attach(PUSH_GREEN_SERVO_PIN);
-    pushRedServo.attach(PUSH_RED_SERVO_PIN);
+Servo baseServo;
+Servo rightArmServo;
+Servo clawServo;
 
-    pinMode(IR_GREEN_PIN, INPUT_PULLUP);
-    pinMode(IR_RED_PIN, INPUT_PULLUP);    
+const int BASE_CENTER = 90;  
+const int BASE_RIGHT = 180;  
+const int BASE_LEFT = 0;  
+const int RIGHT_ARM_UP = 0;  
+const int RIGHT_ARM_DOWN = 60;  
+const int CLAW_OPEN = 70;  
+const int CLAW_GRAB = 160;  
 
-    resetServos();
+void moveServo(Servo &servo, int startAngle, int targetAngle, bool isBaseOrClaw, int stepDelay = 15) {
+    int step = isBaseOrClaw ? 4 : 2; 
+    if (startAngle > targetAngle) step = -step;
 
-    // เชื่อมต่อ Wi-Fi
-    setup_wifi();
-
-    // เชื่อมต่อกับ MQTT Broker
-    client.setServer(mqtt_server, mqtt_port);
-    client.setCallback(callback);
+    for (int angle = startAngle; (step > 0) ? (angle <= targetAngle) : (angle >= targetAngle); angle += step) {
+        servo.write(angle);
+        delay(stepDelay);
+    }
+    servo.write(targetAngle);
 }
 
-void resetServos() {
-    greenServo.write(120);
-    redServo.write(90);
-    pushGreenServo.write(90);
-    pushRedServo.write(90);
+void processMovement(int targetBaseAngle) {
+    moveServo(baseServo, BASE_CENTER, targetBaseAngle, true);
+    delay(1000);
+    moveServo(rightArmServo, RIGHT_ARM_UP, RIGHT_ARM_DOWN, false);
+    delay(1000);
+    moveServo(clawServo, CLAW_OPEN, CLAW_GRAB, true);
+    delay(1000);
+    moveServo(rightArmServo, RIGHT_ARM_DOWN, RIGHT_ARM_UP, false);
+    delay(1000);
+    moveServo(baseServo, targetBaseAngle, BASE_CENTER, true);
+    delay(1000);
+    moveServo(rightArmServo, RIGHT_ARM_UP, RIGHT_ARM_DOWN, false);
+    delay(1000);
+    moveServo(clawServo, CLAW_GRAB, CLAW_OPEN, true);
+    delay(1000);
+    moveServo(rightArmServo, RIGHT_ARM_DOWN, RIGHT_ARM_UP, false);
+    delay(1000);
 }
 
-void rotatePushGreenServo() {
-    pushGreenServo.write(30);
-    delay(3800);
-    pushGreenServo.write(90);
-    delay(1000);
-    pushGreenServo.write(150);
-    delay(4000);
-    pushGreenServo.write(90);
-    delay(1000);
-}
+void callback(char* topic, byte* message, unsigned int length) {
+    String command;
+    
+    for (int i = 0; i < length; i++) {
+        command += (char)message[i];
+    }
 
-void rotatePushRedServo() {
-    pushRedServo.write(30);
-    delay(3800);
-    pushRedServo.write(90);
-    delay(1000);
-    pushRedServo.write(150);
-    delay(4000);
-    pushRedServo.write(90);
-    delay(1000);
+    if (command == "LEFT") {
+        processMovement(BASE_LEFT);
+    } else if (command == "RIGHT") {
+        processMovement(BASE_RIGHT);
+    }
 }
 
 void setup_wifi() {
-    if (!wifiConnectedOnce) {
-        Serial.println("Connecting to WiFi...");
-    }
     WiFi.begin(ssid, password);
     while (WiFi.status() != WL_CONNECTED) {
         delay(500);
-        if (!wifiConnectedOnce) {
-            Serial.print(".");
-        }
-    }
-    if (!wifiConnectedOnce) {
-        Serial.println("\nWiFi connected.");
-        wifiConnectedOnce = true;
     }
 }
 
 void reconnect() {
     while (!client.connected()) {
-        if (!connectedOnce) {
-            Serial.println("Attempting MQTT connection...");
-        }
-        if (client.connect("ESP32ClientColor")) {
-            Serial.println("Connected to MQTT Broker.");
+        if (client.connect("ESP32Client")) {
             client.subscribe(mqtt_topic);
-            // ส่งข้อความไปที่ MQTT Broker เฉพาะครั้งแรก
-            if (!connectedOnce) {
-                client.publish("esp32/status", "Connected to MQTT Broker.", 1);
-                connectedOnce = true;  // ตั้งค่าเป็น true เพื่อไม่ให้ส่งซ้ำ
-            }
         } else {
-            if (!connectedOnce) {
-                Serial.print("Failed, rc=");
-                Serial.print(client.state());
-                Serial.println(" Retrying in 5 seconds...");
-            }
             delay(5000);
         }
     }
 }
 
-// ฟังก์ชันรับคำสั่งจาก MQTT
-void callback(char* topic, byte* message, unsigned int length) {
-    String color = "";
-    for (int i = 0; i < length; i++) {
-        color += (char)message[i];
-    }
+TFT_eSPI tft = TFT_eSPI();
+#define BTN_WIDTH  150
+#define BTN_HEIGHT 60
+#define BTN_RIGHT_X  (tft.width() / 2 - BTN_WIDTH - 10)
+#define BTN_RIGHT_Y  (tft.height() / 2 - BTN_HEIGHT / 2)
+#define BTN_LEFT_X   (tft.width() / 2 + 10)
+#define BTN_LEFT_Y   (tft.height() / 2 - BTN_HEIGHT / 2)
 
-    Serial.println("Received color: " + color);
+void setup() {
+    Serial.begin(115200);
+    setup_wifi();
+    
+    client.setServer(mqtt_server, mqtt_port);
+    client.setCallback(callback);
 
-    if (color == "Green") {
-        Serial.println("Green Servo Activated");
-        greenServo.write(25);
-        delay(500);
+    baseServo.attach(BASE_SERVO_PIN);
+    baseServo.write(BASE_CENTER);
 
-        Serial.println("Waiting for IR Green detection...");
-        while (digitalRead(IR_GREEN_PIN) != 0);
+    rightArmServo.attach(RIGHT_ARM_SERVO_PIN);
+    rightArmServo.write(RIGHT_ARM_UP);
 
-        Serial.println("IR Green Detected. Pushing...");
-        rotatePushGreenServo();
+    clawServo.attach(CLAW_SERVO_PIN);
+    clawServo.write(CLAW_OPEN);
 
-        resetServos();
-        Serial.println("Green Process Completed");
-        client.publish("esp32/status", "Green Process Completed");
-    }
-    else if (color == "Red") {
-        Serial.println("Red Servo Activated");
-        redServo.write(0);
-        delay(500);
-
-        Serial.println("Waiting for IR Red detection...");
-        while (digitalRead(IR_RED_PIN) != 0);
-
-        Serial.println("IR Red Detected. Pushing...");
-        rotatePushRedServo();
-
-        resetServos();
-        Serial.println("Red Process Completed");
-        client.publish("esp32/status", "Red Process Completed");
-    }
+    tft.init();
+    tft.setRotation(3);
+    tft.fillScreen(TFT_WHITE);
+    drawButtons();
 }
 
-// ฟังก์ชันหลัก
+void drawButtons() {
+    drawButton(BTN_LEFT_X, BTN_LEFT_Y, "LEFT", TFT_BLUE);
+    drawButton(BTN_RIGHT_X, BTN_RIGHT_Y, "RIGHT", TFT_RED);
+}
+
+void drawButton(int x, int y, String label, uint16_t color) {
+    tft.fillRect(x, y, BTN_WIDTH, BTN_HEIGHT, color);
+    tft.setTextColor(TFT_WHITE);
+    tft.setCursor(x + 40, y + 20);
+    tft.print(label);
+}
+
+bool isPressed(uint16_t x, uint16_t y, int btnX, int btnY) {
+    return (x >= btnX && x <= btnX + BTN_WIDTH && y >= btnY && y <= btnY + BTN_HEIGHT);
+}
+
 void loop() {
     if (!client.connected()) {
         reconnect();
     }
     client.loop();
 
-    int irGreen = digitalRead(IR_GREEN_PIN);
-    int irRed = digitalRead(IR_RED_PIN);
-
-    if (irGreen != lastIrGreen && millis() - lastDebounceTimeGreen > debounceDelay) {
-        lastIrGreen = irGreen;
-        lastDebounceTimeGreen = millis();
+    uint16_t x, y;
+    if (tft.getTouch(&x, &y)) {
+        if (isPressed(x, y, BTN_LEFT_X, BTN_LEFT_Y)) {
+            drawButton(BTN_LEFT_X, BTN_LEFT_Y, "LEFT", TFT_DARKGREY);
+            delay(200);
+            drawButton(BTN_LEFT_X, BTN_LEFT_Y, "LEFT", TFT_BLUE);
+            processMovement(BASE_LEFT);
+        }
+        if (isPressed(x, y, BTN_RIGHT_X, BTN_RIGHT_Y)) {
+            drawButton(BTN_RIGHT_X, BTN_RIGHT_Y, "RIGHT", TFT_DARKGREY);
+            delay(200);
+            drawButton(BTN_RIGHT_X, BTN_RIGHT_Y, "RIGHT", TFT_RED);
+            processMovement(BASE_RIGHT);
+        }
     }
-
-    if (irRed != lastIrRed && millis() - lastDebounceTimeRed > debounceDelay) {
-        lastIrRed = irRed;
-        lastDebounceTimeRed = millis();
-    }
-
-    delay(500);
 }
