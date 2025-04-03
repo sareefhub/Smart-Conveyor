@@ -4,6 +4,7 @@ This repository is a Mini Project for the **IoT Module course**.
 
 ## 📌 Code Repository
 
+```
 📦 Code Repository
 │-- 📂 ESP32
 │   │-- 📂 Conveyor-system
@@ -14,7 +15,7 @@ This repository is a Mini Project for the **IoT Module course**.
 │   │   │-- 📜 Separation-system.ino
 │-- 📂 RaspberryPi
 │-- 📜 README.md
-
+```
 
 ## 📖 Table of Contents
 
