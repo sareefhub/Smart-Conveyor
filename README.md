@@ -1,5 +1,7 @@
 # Smart Conveyor
 
+![Image Smart Conveyor](https://github.com/user-attachments/assets/f2129a9a-3cb8-408c-97d1-9c127b653ccc)
+
 This repository is a Mini Project for the **IoT Module course**.
 
 ## 📌 Code Repository
