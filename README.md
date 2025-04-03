@@ -25,6 +25,6 @@ This repository is a Mini Project for the **IoT Module course**.
 
 ### Code
 - **ESP32**
-  - [📂 Conveyor-system](ESP32/Conveyor-system)
-  - [📂 Robotic-arm](ESP32/Robotic-arm)
-  - [📂 Separation-system](ESP32/Separation-system)
+  - [📂 Conveyor-system](ESP32/Conveyor-system/Conveyor-system.ino)
+  - [📂 Robotic-arm](ESP32/Robotic-arm/Robotic-arm.ino)
+  - [📂 Separation-system](ESP32/Separation-system/Separation-system.ino)
